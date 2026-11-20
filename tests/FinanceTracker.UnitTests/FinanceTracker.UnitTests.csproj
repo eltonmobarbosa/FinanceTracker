@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\FinanceTracker.Domain\FinanceTracker.Domain.csproj" />
+    <ProjectReference Include="..\..\src\FinanceTracker.Infrastructure\FinanceTracker.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

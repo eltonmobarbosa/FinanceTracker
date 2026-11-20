@@ -49,3 +49,10 @@ dotnet ef migrations add <Nome> -p src/FinanceTracker.Infrastructure -s src/Fina
 - [0003 — Controllers e Problem Details](docs/adr/0003-controllers-e-problem-details.md)
 - [0004 — Escopo da v1](docs/adr/0004-escopo-v1.md)
 - [0005 — Modelo de dados e persistência](docs/adr/0005-modelo-de-dados.md)
+- [0006 — Parsers de extrato (OFX e CSV)](docs/adr/0006-parsers-de-extrato.md)
+
+## Formatos suportados
+| Banco | Formato | Parser |
+|---|---|---|
+| Qualquer banco que exporte OFX (v1 SGML ou v2 XML) | `.ofx` | `OfxParser` |
+| Nubank — fatura do cartão | `.csv` (`date,title,amount`) | `NubankCardCsvParser` |
