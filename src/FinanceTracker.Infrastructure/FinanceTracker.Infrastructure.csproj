@@ -1,0 +1,7 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\FinanceTracker.Application\FinanceTracker.Application.csproj" />
+  </ItemGroup>
+
+</Project>

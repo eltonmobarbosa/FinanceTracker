@@ -1,0 +1,10 @@
+<!-- Applied automatically to every .csproj below this folder. Shared settings live here once (DRY). -->
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Warnings (e.g. possible null) fail the build: they are bugs caught at compile time. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,9 @@
+<!-- Central Package Management: every NuGet version is declared here once; .csproj files reference packages without a version. -->
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.15" />
+  </ItemGroup>
+</Project>
