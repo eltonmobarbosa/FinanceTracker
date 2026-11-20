@@ -1,4 +1,5 @@
 using FinanceTracker.Domain.Accounts;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -10,7 +11,10 @@ internal sealed class AccountConfiguration : IEntityTypeConfiguration<Account>
     {
         builder.Property(a => a.Name).HasMaxLength(Account.NameMaxLength);
 
-        // Every query filters by the logged-in user.
-        builder.HasIndex(a => a.UserId);
+        // Every query filters by the logged-in user. (EF also creates this index for the foreign key below.)
+        builder.HasOne<IdentityUser<Guid>>()
+            .WithMany()
+            .HasForeignKey(a => a.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -50,6 +50,9 @@ os limites são constantes no domínio, reaproveitadas pela validação e pelo m
 
 **Sem navegações nas entidades** (`Transaction.Category` etc.). As relações são configuradas só pelas FKs.
 Navegações entram quando uma consulta realmente precisar delas.
+*Atualização:* `Category.Rules` entrou com o ADR 0008 — a categoria é dona das regras.
+
+**Usuários (ADR 0007):** `Accounts.UserId` e `Categories.UserId` são FKs para `AspNetUsers` com `CASCADE`.
 
 ## Alternativas consideradas
 - **Data Annotations nas entidades:** mais rápido de escrever, mas acopla o domínio ao EF. Descartado.
