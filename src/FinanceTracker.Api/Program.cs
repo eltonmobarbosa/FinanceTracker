@@ -1,5 +1,13 @@
+using FinanceTracker.Infrastructure;
+using FinanceTracker.Infrastructure.Persistence;
+
 var builder = WebApplication.CreateBuilder(args);
 
+// Dev: appsettings.Development.json. Production: environment variable ConnectionStrings__Default.
+var connectionString = builder.Configuration.GetConnectionString("Default")
+    ?? throw new InvalidOperationException("Connection string 'Default' is not configured.");
+
+builder.Services.AddInfrastructure(connectionString);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
@@ -7,8 +15,8 @@ builder.Services.AddOpenApi();
 // so the Angular client handles errors in one place.
 builder.Services.AddProblemDetails();
 
-// Liveness probe. The database check is added in phase 2, together with EF Core.
-builder.Services.AddHealthChecks();
+// /health also opens a connection to SQL Server: "Healthy" means the API can reach the database.
+builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>();
 
 var app = builder.Build();
 
