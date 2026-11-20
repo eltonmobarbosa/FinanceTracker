@@ -10,10 +10,10 @@ export const routes: Routes = [
     component: Shell,
     canActivate: [authGuard],
     children: [
-      { path: '', title: 'Painel · FinanceTracker', loadComponent: () => import('./pages/dashboard').then((m) => m.DashboardPage) },
+      { path: '', title: 'Visão geral · FinanceTracker', loadComponent: () => import('./pages/dashboard').then((m) => m.DashboardPage) },
       { path: 'transacoes', title: 'Transações · FinanceTracker', loadComponent: () => import('./pages/transactions').then((m) => m.TransactionsPage) },
-      { path: 'importar', title: 'Contas e importação · FinanceTracker', loadComponent: () => import('./pages/import').then((m) => m.ImportPage) },
-      { path: 'categorias', title: 'Categorias · FinanceTracker', loadComponent: () => import('./pages/categories').then((m) => m.CategoriesPage) },
+      { path: 'contas', title: 'Contas e importação · FinanceTracker', loadComponent: () => import('./pages/accounts').then((m) => m.AccountsPage) },
+      { path: 'categorias', title: 'Categorias e regras · FinanceTracker', loadComponent: () => import('./pages/categories').then((m) => m.CategoriesPage) },
     ],
   },
   { path: '**', redirectTo: '' },

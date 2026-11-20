@@ -33,6 +33,48 @@ jobs:
       - run: dotnet build FinanceTracker.slnx
       - run: dotnet test FinanceTracker.slnx --no-build
 
+  e2e:
+    name: End-to-end (Playwright, real browser + API + SQL Server)
+    runs-on: ubuntu-latest
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2025-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "Ci-Only-Passw0rd!"
+        ports: ["1433:1433"]
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'Ci-Only-Passw0rd!' -Q 'SELECT 1'"
+          --health-interval 10s --health-timeout 5s --health-retries 12
+    env:
+      # Environment variables override appsettings.*.json (ASP.NET configuration precedence).
+      ConnectionStrings__Default: "Server=localhost,1433;Database=FinanceTracker_E2E;User Id=sa;Password=Ci-Only-Passw0rd!;TrustServerCertificate=True"
+      Jwt__Key: "ci-only-signing-key-0123456789-abcdefghijklmnop"
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: dotnet tool restore
+      - run: dotnet ef database update -p src/FinanceTracker.Infrastructure -s src/FinanceTracker.Api
+      - run: npm ci
+        working-directory: web
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - run: npx playwright test --grep-invert "visual tour"
+        working-directory: web
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: web/e2e-report
+
   frontend:
     name: Frontend (build)
     runs-on: ubuntu-latest

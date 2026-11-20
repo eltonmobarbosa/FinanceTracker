@@ -24,9 +24,8 @@ num arquivo só.
 O navegador vê uma única origem, então não há CORS para configurar. Em produção, o mesmo efeito vem de servir
 o build do Angular e a API atrás do mesmo domínio (reverse proxy).
 
-**Sem biblioteca de componentes** (Angular Material, PrimeNG). CSS próprio com *design tokens* em `styles.css`.
-O app tem poucas telas; uma biblioteca traria peso e tema para customizar. **Chart.js** direto, com um wrapper de
-20 linhas (`shared/chart.ts`), em vez de `ng2-charts`.
+**Sem biblioteca de componentes** (Angular Material, PrimeNG). *Atualizado pelo ADR 0010:* o estilo segue o padrão
+shadcn/ui com Tailwind. **Chart.js** direto, com um wrapper de 30 linhas (`shared/chart.ts`), em vez de `ng2-charts`.
 
 **Páginas *lazy-loaded*.** Cada página é um chunk separado; o Chart.js (~200 kB) só é baixado ao abrir o painel.
 

@@ -3,7 +3,21 @@
 Controle financeiro pessoal: importe o extrato do banco (OFX ou CSV), o sistema categoriza as transações
 sozinho e mostra para onde foi o dinheiro.
 
-**Stack:** C# / ASP.NET Core (.NET 10) · EF Core · SQL Server · Angular 22 · Chart.js
+**Stack:** C# / ASP.NET Core (.NET 10) · EF Core · SQL Server · Angular 22 · Tailwind CSS · Chart.js · Playwright
+
+![Visão geral](docs/screenshots/light-dashboard.png)
+
+<details>
+<summary>Mais telas (tema escuro, transações, categorização, celular)</summary>
+
+| | |
+|---|---|
+| ![Tema escuro](docs/screenshots/dark-dashboard.png) | ![Transações](docs/screenshots/light-transactions.png) |
+| ![Categorizar com regra](docs/screenshots/light-categorize-dialog.png) | ![Contas e importação](docs/screenshots/light-accounts.png) |
+| ![Categorias e regras](docs/screenshots/light-categories.png) | ![Login](docs/screenshots/dark-login.png) |
+| ![Celular](docs/screenshots/mobile-transactions.png) | |
+
+</details>
 
 ## Funcionalidades
 - Cadastro e login (ASP.NET Identity + JWT), com os dados de cada usuário isolados.
@@ -12,8 +26,10 @@ sozinho e mostra para onde foi o dinheiro.
 - **Importação idempotente:** reimportar o mesmo arquivo não duplica nada. A garantia vem de um índice único no banco.
 - **Categorização automática por regras** ("descrição contém X"), com prioridade, ignorando maiúsculas e acentos.
 - **Categorização que aprende:** ao corrigir uma transação, você pode criar uma regra que já é aplicada às parecidas.
-- Painel com entradas, gastos, saldo, gastos por categoria e evolução mensal. O pagamento da fatura do cartão
-  não é contado duas vezes.
+- Painel com entradas, gastos, saldo, taxa de economia, gastos por categoria e evolução mensal. O pagamento da
+  fatura do cartão não é contado duas vezes.
+- Interface no padrão do shadcn/ui, com tema claro e escuro, responsiva (no celular as transações viram blocos,
+  como em app de banco) e acessível: modais nativos, rótulos e navegação por teclado.
 
 ## Arquitetura
 
@@ -66,7 +82,18 @@ dotnet test
   e um usuário que não consegue ver nem alterar os dados de outro (404). Rodam contra o banco
   `FinanceTracker_Tests` (local) ou contra a variável `FINANCETRACKER_TEST_DB` (CI).
 
-O CI (`.github/workflows/ci.yml`) roda os testes com SQL Server em container e faz o build do Angular.
+- **End-to-end (Playwright):** um navegador real clica em todos os botões do app (Angular + API + SQL Server):
+  cadastro, login, tema, filtros, paginação, modal de categorização, importação por clique e por arrastar,
+  criação, edição e exclusão, menu mobile. Seletores por papel acessível, um usuário novo por teste.
+
+```bash
+cd web
+npx playwright install chromium   # uma vez
+npx playwright test               # reaproveita a API e o Angular se já estiverem rodando
+npx playwright show-report e2e-report
+```
+
+O CI (`.github/workflows/ci.yml`) roda os testes de backend e os E2E com SQL Server em container, e faz o build do Angular.
 
 ## API
 
@@ -101,6 +128,7 @@ Para suportar um banco novo, basta uma classe que implemente `IStatementParser` 
 - [0007: Autenticação e isolamento entre usuários](docs/adr/0007-autenticacao-e-isolamento.md)
 - [0008: Importação e categorização](docs/adr/0008-importacao-e-categorizacao.md)
 - [0009: Frontend Angular](docs/adr/0009-frontend-angular.md)
+- [0010: Design system (padrão shadcn/ui) e testes end-to-end](docs/adr/0010-design-system-e-testes-e2e.md)
 
 ## Convenções
 - Código, nomes e commits em inglês; documentação em português.

@@ -2,15 +2,17 @@ import { Component, DestroyRef, ElementRef, effect, inject, input, viewChild } f
 import { Chart, ChartConfiguration, registerables } from 'chart.js';
 
 Chart.register(...registerables);
+Chart.defaults.font.family = "'Inter Variable', system-ui, sans-serif";
 
 /** Thin wrapper around Chart.js: redraws whenever the `config` input changes. */
 @Component({
   selector: 'app-chart',
-  template: '<canvas #canvas></canvas>',
-  host: { style: 'display:block; position:relative; height:280px' },
+  template: '<canvas #canvas [attr.aria-label]="label()" role="img"></canvas>',
+  host: { class: 'block relative' },
 })
 export class ChartView {
   readonly config = input.required<ChartConfiguration>();
+  readonly label = input('');
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   private chart?: Chart;
 
@@ -25,4 +27,9 @@ export class ChartView {
     });
     inject(DestroyRef).onDestroy(() => this.chart?.destroy());
   }
+}
+
+/** Reads a design token (CSS variable) so charts follow the light/dark theme. */
+export function token(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim();
 }

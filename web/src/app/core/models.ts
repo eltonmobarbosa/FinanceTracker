@@ -6,6 +6,8 @@ export interface Account {
   id: number;
   name: string;
   type: AccountType;
+  transactionCount: number;
+  lastTransactionDate: string | null;
 }
 
 export interface CategoryRule {

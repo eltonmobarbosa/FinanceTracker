@@ -22,17 +22,23 @@ export const apiInterceptor: HttpInterceptorFn = (req, next) => {
       const isLoginAttempt = req.url.startsWith('/api/auth/');
       if (error.status === 401 && !isLoginAttempt) {
         auth.logout(); // expired or invalid token
-        toast.error('Sua sessão expirou. Entre novamente.');
+        toast.error('Sua sessão expirou', 'Entre novamente para continuar.');
       } else {
-        toast.error(problemMessage(error));
+        toast.error(problemTitle(error), problemMessage(error));
       }
       return throwError(() => error);
     }),
   );
 };
 
+function problemTitle(error: HttpErrorResponse): string {
+  if (error.status === 0) return 'Sem conexão com o servidor';
+  const problem = error.error as ProblemDetails | null;
+  return problem?.detail && problem.title ? problem.title : 'Não foi possível concluir';
+}
+
 export function problemMessage(error: HttpErrorResponse): string {
-  if (error.status === 0) return 'Não foi possível conectar à API.';
+  if (error.status === 0) return 'Verifique se a API está rodando e tente de novo.';
 
   const problem = error.error as ProblemDetails | null;
   if (problem?.errors) return Object.values(problem.errors).flat().join(' ');

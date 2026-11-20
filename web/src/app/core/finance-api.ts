@@ -2,6 +2,7 @@ import { HttpClient, httpResource } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { Account, AccountType, Category, CategoryRule, ImportResult } from './models';
+// Categories are read through CategoryStore (shared cache + colors).
 
 /**
  * Every API endpoint in one place.
@@ -15,10 +16,6 @@ export class FinanceApi {
 
   accounts() {
     return httpResource<Account[]>(() => '/api/accounts', { defaultValue: [] });
-  }
-
-  categories() {
-    return httpResource<Category[]>(() => '/api/categories', { defaultValue: [] });
   }
 
   createAccount(name: string, type: AccountType): Observable<Account> {
