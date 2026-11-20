@@ -5,7 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FinanceTracker.Application.Accounts;
 
-public sealed record AccountDto(int Id, string Name, AccountType Type);
+/// <param name="LastTransactionDate">Most recent transaction imported (null = nothing imported yet). Tells the user how up to date the account is.</param>
+public sealed record AccountDto(
+    int Id, string Name, AccountType Type, int TransactionCount = 0, DateOnly? LastTransactionDate = null);
 
 public sealed record CreateAccountRequest(
     [Required, StringLength(Account.NameMaxLength)] string Name,
@@ -16,7 +18,10 @@ public sealed class AccountService(IAppDbContext db, ICurrentUser user)
     public Task<List<AccountDto>> ListAsync(CancellationToken ct) =>
         db.OwnedAccounts(user.UserId)
             .OrderBy(a => a.Name)
-            .Select(a => new AccountDto(a.Id, a.Name, a.Type))
+            .Select(a => new AccountDto(
+                a.Id, a.Name, a.Type,
+                db.Transactions.Count(t => t.AccountId == a.Id),
+                db.Transactions.Where(t => t.AccountId == a.Id).Max(t => (DateOnly?)t.Date)))
             .ToListAsync(ct);
 
     public async Task<AccountDto> CreateAsync(CreateAccountRequest request, CancellationToken ct)
