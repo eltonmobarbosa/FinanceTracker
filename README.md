@@ -1,39 +1,30 @@
 # FinanceTracker
 
-Todo mês a fatura chega e a pergunta é a mesma: para onde foi o dinheiro?
+Aplicação de controle financeiro pessoal. Importa extratos bancários, categoriza as transações e mostra entradas e gastos por período.
 
-O FinanceTracker responde isso sem planilha. Você envia o extrato do banco, ele organiza os gastos por categoria e mostra o mês em um painel simples.
+![Painel do FinanceTracker](docs/screenshots/light-dashboard.png)
 
-![Visão geral do FinanceTracker](docs/screenshots/light-dashboard.png)
+## Funcionalidades
 
-## O que ele faz
+- Importação de extratos OFX e CSV da fatura do Nubank
+- Categorização automática por regras
+- Reimportação sem duplicar transações
+- Opção de desfazer uma importação
+- Painel com entradas, gastos, saldo e gastos por categoria
+- Login com dados separados por usuário
+- Tema claro e escuro, com layout para celular
 
-- Lê extratos **OFX** de qualquer banco e o **CSV da fatura do Nubank**.
-- Categoriza sozinho e aprende quando você corrige uma transação.
-- Não duplica nada se o mesmo arquivo for enviado de novo, e uma importação errada pode ser desfeita.
-- Não conta o pagamento da fatura como gasto, e estorno volta a reduzir o que você gastou.
-- Funciona no celular, tem tema escuro e cada usuário vê apenas os próprios dados.
+## Stack
 
-<details>
-<summary>Ver mais telas</summary>
+- **Back-end:** C#, ASP.NET Core (.NET 10), EF Core e SQL Server
+- **Front-end:** Angular, Tailwind CSS e Chart.js
+- **Testes:** xUnit e Playwright
 
-| | |
-|---|---|
-| ![Tema escuro](docs/screenshots/dark-dashboard.png) | ![Transações](docs/screenshots/light-transactions.png) |
-| ![Categorizar com regra](docs/screenshots/light-categorize-dialog.png) | ![Contas e importação](docs/screenshots/light-accounts.png) |
-| ![Categorias e regras](docs/screenshots/light-categories.png) | ![Celular](docs/screenshots/mobile-transactions.png) |
-
-</details>
-
-## Feito com
-
-C# e ASP.NET Core (.NET 10), EF Core, SQL Server, Angular, Tailwind CSS, Chart.js, xUnit e Playwright.
-
-As decisões do projeto, com o porquê de cada uma, estão em [`docs/adr`](docs/adr).
+As decisões de arquitetura estão em [`docs/adr`](docs/adr).
 
 ## Como rodar
 
-Você vai precisar do .NET 10, Node 24+ e SQL Server Express (instância `.\SQLEXPRESS`).
+Pré-requisitos: .NET 10, Node 24+ e SQL Server Express na instância `.\SQLEXPRESS`.
 
 ```bash
 dotnet tool restore
@@ -50,11 +41,13 @@ npm install
 npm start
 ```
 
-Abra http://localhost:4200, crie uma conta e teste com os extratos fictícios da pasta [`samples`](samples).
+A aplicação fica em http://localhost:4200. A pasta [`samples`](samples) tem extratos fictícios para teste.
 
 ## Testes
 
 ```bash
 dotnet test
-cd web && npx playwright install chromium && npx playwright test
+cd web
+npx playwright install chromium
+npx playwright test
 ```
