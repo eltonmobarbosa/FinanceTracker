@@ -183,6 +183,7 @@ export class TransactionsPage {
     effect((onCleanup) => {
       const value = this.searchInput().trim();
       const timer = setTimeout(() => {
+        if (value === this.search()) return; // the first run must not undo a page change
         this.search.set(value);
         this.page.set(1);
       }, 300);
