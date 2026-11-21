@@ -16,8 +16,8 @@ import { Modal } from '../shared/modal';
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">Categorias e regras</h1>
         <p class="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Uma regra diz: <em>se a descrição contém este texto, a transação vai para esta categoria</em>. Maiúsculas e acentos
-          são ignorados. Se duas regras casarem, vence a de maior prioridade e, no empate, o texto mais longo.
+          Uma regra diz: <em>se uma palavra da descrição começa com este texto, a transação vai para esta categoria</em>.
+          Maiúsculas e acentos são ignorados. Se duas regras casarem, vence a de maior prioridade e, no empate, o texto mais longo.
         </p>
       </div>
       <button class="btn btn-primary" (click)="openEditor(null)"><app-icon name="plus" /> Nova categoria</button>

@@ -58,7 +58,7 @@ public class OfxParserTests
         var result = _parser.Parse(Windows1252(SgmlSample));
 
         Assert.Equal(2, result.Count);
-        Assert.Equal(new ParsedTransaction(new DateOnly(2026, 10, 16), -50.00m, "PADARIA SÃO JOÃO", "20261016001"), result[0]);
+        Assert.Equal(new ParsedTransaction(new DateOnly(2026, 10, 16), -50.00m, "PADARIA SÃO JOÃO", "20261016001~20261016~-50.00"), result[0]);
     }
 
     [Fact]
@@ -75,17 +75,63 @@ public class OfxParserTests
     {
         var result = _parser.Parse(Encoding.UTF8.GetBytes(XmlSample));
 
-        Assert.Equal(new ParsedTransaction(new DateOnly(2026, 10, 20), -12.34m, "Café", "X1"), Assert.Single(result));
+        Assert.Equal(new ParsedTransaction(new DateOnly(2026, 10, 20), -12.34m, "Café", "X1~20261020~-12.34"), Assert.Single(result));
+    }
+
+    private static string Line(string fitId, string date, string amount, string memo) =>
+        $"<STMTTRN><FITID>{fitId}\n<DTPOSTED>{date}\n<TRNAMT>{amount}\n<MEMO>{memo}\n</STMTTRN>\n";
+
+    [Fact]
+    public void Identical_lines_with_the_same_fitid_are_kept_apart()
+    {
+        var line = Line("X", "20261001", "-10.00", "Cafe");
+
+        var result = _parser.Parse(Encoding.UTF8.GetBytes("<OFX>" + line + line));
+
+        Assert.Equal(["X~20261001~-10.00", "X~20261001~-10.00#1"], result.Select(t => t.ExternalId));
     }
 
     [Fact]
-    public void Repeated_fitid_inside_one_file_is_made_unique()
+    public void Fitid_reused_across_files_does_not_hide_a_new_transaction()
     {
-        var duplicated = SgmlSample.Replace("20261017001", "20261016001");
+        var first = _parser.Parse(Encoding.UTF8.GetBytes(
+            "<OFX>" + Line("X", "20261001", "-10.00", "A") + Line("X", "20261002", "-20.00", "B")));
+        var second = _parser.Parse(Encoding.UTF8.GetBytes(
+            "<OFX>" + Line("X", "20261002", "-20.00", "B") + Line("X", "20261003", "-30.00", "C")));
 
-        var result = _parser.Parse(Windows1252(duplicated));
+        var known = first.Select(t => t.ExternalId).ToHashSet();
 
-        Assert.Equal(["20261016001", "20261016001#1"], result.Select(t => t.ExternalId));
+        Assert.Equal("C", Assert.Single(second, t => !known.Contains(t.ExternalId)).Description);
+    }
+
+    [Fact]
+    public void Xml_entities_are_decoded() =>
+        Assert.Equal("C&A LOJA", Assert.Single(_parser.Parse(Encoding.UTF8.GetBytes(
+            "<OFX>" + Line("1", "20261016", "-10.00", "C&amp;A LOJA")))).Description);
+
+    [Fact]
+    public void Latin1_file_without_charset_header_keeps_accents() =>
+        Assert.Equal("PADARIA SÃO JOÃO", Assert.Single(_parser.Parse(Encoding.Latin1.GetBytes(
+            "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><OFX>" + Line("1", "20261016", "-10.00", "PADARIA SÃO JOÃO")))).Description);
+
+    [Theory]
+    [InlineData("-1.234,56", -1234.56)]
+    [InlineData("-1,234.56", -1234.56)]
+    [InlineData("-50,00", -50.00)]
+    [InlineData("-50.00", -50.00)]
+    public void Amount_formats_are_read(string text, double expected) =>
+        Assert.Equal((decimal)expected, Assert.Single(_parser.Parse(Encoding.UTF8.GetBytes(
+            "<OFX>" + Line("1", "20261016", text, "X")))).Amount);
+
+    [Fact]
+    public void File_full_of_unclosed_tags_is_parsed_quickly()
+    {
+        var malicious = "<OFX>" + string.Concat(Enumerable.Repeat("<STMTTRN>", 5 * 1024 * 1024 / 9));
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        Assert.Empty(_parser.Parse(Encoding.UTF8.GetBytes(malicious)));
+
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), $"took {watch.Elapsed}");
     }
 
     [Fact]

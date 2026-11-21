@@ -32,6 +32,14 @@ export class FinanceApi {
     return this.http.post<ImportResult>(`/api/accounts/${accountId}/imports`, form);
   }
 
+  undoImport(accountId: number, importId: string): Observable<void> {
+    return this.http.delete<void>(`/api/accounts/${accountId}/imports/${importId}`);
+  }
+
+  deleteProfile(password: string): Observable<void> {
+    return this.http.delete<void>('/api/auth/me', { body: { password } });
+  }
+
   createCategory(name: string, isTransfer: boolean): Observable<Category> {
     return this.http.post<Category>('/api/categories', { name, isTransfer });
   }

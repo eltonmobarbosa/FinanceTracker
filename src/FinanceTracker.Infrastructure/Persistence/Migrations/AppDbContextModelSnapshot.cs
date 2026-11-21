@@ -125,12 +125,16 @@ namespace FinanceTracker.Infrastructure.Persistence.Migrations
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("nvarchar(500)")
+                        .UseCollation("Latin1_General_CI_AI");
 
                     b.Property<string>("ExternalId")
                         .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<Guid?>("ImportId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 

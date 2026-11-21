@@ -24,6 +24,14 @@ internal static class Ownership
     public static IQueryable<Transaction> OwnedTransactions(this IAppDbContext db, Guid userId) =>
         db.Transactions.Where(t => db.Accounts.Any(a => a.Id == t.AccountId && a.UserId == userId));
 
+    /// <summary>Two rules with the same text would tie, and the category of the next import would be arbitrary.</summary>
+    public static async Task EnsureRuleIsNewAsync(this IAppDbContext db, Guid userId, string pattern, CancellationToken ct)
+    {
+        var rules = await db.OwnedRules(userId).AsNoTracking().ToListAsync(ct);
+        if (rules.Any(r => r.HasSamePattern(pattern)))
+            throw new ConflictException($"Já existe uma regra para \"{pattern.Trim()}\".");
+    }
+
     public static async Task<T> GetAsync<T>(this IQueryable<T> query, int id, string resource, CancellationToken ct)
         where T : Entity =>
         await query.FirstOrDefaultAsync(e => e.Id == id, ct) ?? throw new NotFoundException(resource);

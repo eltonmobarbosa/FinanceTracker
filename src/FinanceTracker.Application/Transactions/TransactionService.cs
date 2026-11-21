@@ -84,6 +84,7 @@ public sealed class TransactionService(IAppDbContext db, ICurrentUser user)
         var alsoCategorized = 0;
         if (!string.IsNullOrWhiteSpace(request.RulePattern))
         {
+            await db.EnsureRuleIsNewAsync(user.UserId, request.RulePattern, ct);
             var rule = category.AddRule(request.RulePattern);
 
             // Matched in memory with the same Matches() used at import time (accent-insensitive), so the

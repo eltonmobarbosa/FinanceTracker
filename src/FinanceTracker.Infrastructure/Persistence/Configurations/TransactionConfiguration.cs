@@ -10,7 +10,8 @@ internal sealed class TransactionConfiguration : IEntityTypeConfiguration<Transa
 {
     public void Configure(EntityTypeBuilder<Transaction> builder)
     {
-        builder.Property(t => t.Description).HasMaxLength(Transaction.DescriptionMaxLength);
+        // Accent-insensitive, so searching "sao" finds "São", the same way category rules match.
+        builder.Property(t => t.Description).HasMaxLength(Transaction.DescriptionMaxLength).UseCollation("Latin1_General_CI_AI");
         builder.Property(t => t.ExternalId).HasMaxLength(Transaction.ExternalIdMaxLength);
 
         builder.HasOne<Account>()

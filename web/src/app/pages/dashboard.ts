@@ -12,6 +12,7 @@ import { ChartView, token } from '../shared/chart';
 import { Icon, IconName } from '../shared/icon';
 
 const PRESETS: PeriodPreset[] = ['month', '3m', '6m', '12m', 'all'];
+const LEGEND_SIZE = 6;
 
 @Component({
   selector: 'app-dashboard-page',
@@ -107,11 +108,11 @@ const PRESETS: PeriodPreset[] = ['month', '3m', '6m', '12m', 'all'];
                 </div>
               </div>
               <ul class="mt-5 space-y-1">
-                @for (c of s.expensesByCategory.slice(0, 6); track c.categoryId) {
+                @for (c of legend(); track c.name) {
                   <li>
                     <a class="flex items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-                       routerLink="/transacoes" [queryParams]="c.categoryId === null ? { uncategorized: true } : { categoryId: c.categoryId }">
-                      <span class="size-2.5 shrink-0 rounded-full" [style.background]="store.colorOf(c.categoryId)"></span>
+                       routerLink="/transacoes" [queryParams]="c.isOther ? {} : c.categoryId === null ? { uncategorized: true } : { categoryId: c.categoryId }">
+                      <span class="size-2.5 shrink-0 rounded-full" [style.background]="c.isOther ? 'var(--muted-foreground)' : store.colorOf(c.categoryId)"></span>
                       <span class="flex-1 truncate">{{ c.name }}</span>
                       <span class="w-10 text-right text-xs text-muted-foreground">{{ c.total / s.expenses | percent }}</span>
                       <span class="tabular w-24 text-right font-medium">{{ c.total | currency }}</span>
@@ -189,14 +190,24 @@ export class DashboardPage {
 
   protected readonly hasNoData = computed(() => (this.summary.value()?.byMonth.length ?? 0) === 0);
 
+  /** The biggest categories plus one "Outras" line, so the list always adds up to the total. */
+  protected readonly legend = computed(() => {
+    const all = this.summary.value()?.expensesByCategory ?? [];
+    const top = all.slice(0, LEGEND_SIZE).map((c) => ({ ...c, isOther: false }));
+    const rest = all.slice(LEGEND_SIZE);
+    if (!rest.length) return top;
+    const total = rest.reduce((sum, c) => sum + c.total, 0);
+    return [...top, { categoryId: null, name: `Outras (${rest.length})`, total, isOther: true }];
+  });
+
   protected readonly kpis = computed(() => {
     const s = this.summary.value();
     if (!s) return [];
     const balance = s.income - s.expenses;
     const savingsRate = s.income > 0 ? balance / s.income : 0;
     const kpis: { label: string; value: string; hint: string; icon: IconName; iconClass: string; valueClass: string }[] = [
-      { label: 'Entradas', value: formatBRL(s.income), hint: 'Salário, Pix recebidos, estornos', icon: 'arrow-down-left', iconClass: 'bg-positive-soft text-positive', valueClass: '' },
-      { label: 'Gastos', value: formatBRL(s.expenses), hint: `Em ${s.expensesByCategory.length} categorias`, icon: 'arrow-up-right', iconClass: 'bg-muted text-foreground', valueClass: '' },
+      { label: 'Entradas', value: formatBRL(s.income), hint: 'Salário e Pix recebidos', icon: 'arrow-down-left', iconClass: 'bg-positive-soft text-positive', valueClass: '' },
+      { label: 'Gastos', value: formatBRL(s.expenses), hint: `Em ${s.expensesByCategory.length} categorias, já sem estornos`, icon: 'arrow-up-right', iconClass: 'bg-muted text-foreground', valueClass: '' },
       { label: 'Saldo do período', value: formatBRL(balance), hint: balance >= 0 ? 'Sobrou dinheiro' : 'Gastou mais do que entrou', icon: 'wallet', iconClass: balance >= 0 ? 'bg-positive-soft text-positive' : 'bg-destructive-soft text-destructive', valueClass: balance >= 0 ? 'text-positive' : 'text-destructive' },
       { label: 'Taxa de economia', value: `${Math.round(savingsRate * 100)}%`, hint: 'Do que entrou, quanto sobrou', icon: 'piggy-bank', iconClass: 'bg-muted text-foreground', valueClass: '' },
     ];

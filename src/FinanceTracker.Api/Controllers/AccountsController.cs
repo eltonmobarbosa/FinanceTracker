@@ -38,4 +38,11 @@ public sealed class AccountsController(AccountService accounts, ImportService im
 
         return await imports.ImportAsync(id, file.FileName, buffer.ToArray(), ct);
     }
+
+    [HttpDelete("{id:int}/imports/{importId:guid}")]
+    public async Task<IActionResult> UndoImport(int id, Guid importId, CancellationToken ct)
+    {
+        await imports.UndoAsync(id, importId, ct);
+        return NoContent();
+    }
 }

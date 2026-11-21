@@ -46,6 +46,9 @@ test.describe('transactions', () => {
     await page.getByRole('combobox', { name: /Categoria de Pix no Crédito/ }).first().selectOption({ label: 'Compras' });
     const dialog = page.getByRole('dialog', { name: 'Categorizar transação' });
     await expect(dialog).toBeVisible();
+    // A rule is opt-in: fixing one line must not change future imports by accident.
+    await expect(dialog.getByRole('checkbox', { name: /Criar regra automática/ })).not.toBeChecked();
+    await dialog.getByRole('checkbox', { name: /Criar regra automática/ }).check();
     await expect(dialog.getByLabel('Quando a descrição contiver')).toHaveValue('Pix no Crédito - Joao Exemplo');
     await expect(dialog.getByText(/Cerca de 4 outra/)).toBeVisible(); // live preview
 
@@ -80,7 +83,6 @@ test.describe('transactions', () => {
 
     // "Only this one": uncheck the rule.
     await firstSelect.selectOption({ label: 'Salário' });
-    await dialog.getByRole('checkbox', { name: /Criar regra automática/ }).uncheck();
     await expect(dialog.getByLabel('Quando a descrição contiver')).toBeHidden();
     await dialog.getByRole('combobox', { name: 'Categoria' }).selectOption({ label: 'Compras' });
     await dialog.getByRole('button', { name: 'Salvar', exact: true }).click();
@@ -92,4 +94,25 @@ test.describe('transactions', () => {
     await firstSelect.selectOption({ label: 'Sem categoria' });
     await expect(page.getByRole('status').filter({ hasText: 'Categoria removida' })).toBeVisible();
   });
+});
+
+test('categorizing the only row of the last page goes back to the previous page', async ({ loggedIn: page, user, request }) => {
+  const headers = { Authorization: `Bearer ${user.token}` };
+  const account = await (await request.post('/api/accounts', { headers, data: { name: 'Cartão', type: 'CreditCard' } })).json();
+  const lines = Array.from({ length: 26 }, (_, i) => `2026-10-01,Zzz ${String.fromCharCode(97 + i)},"1,00"`);
+  const upload = await request.post(`/api/accounts/${account.id}/imports`, {
+    headers,
+    multipart: { file: { name: 'f.csv', mimeType: 'text/csv', buffer: Buffer.from(`date,title,amount\n${lines.join('\n')}`) } },
+  });
+  expect(upload.ok()).toBeTruthy();
+
+  await page.goto('/transacoes?uncategorized=true');
+  await page.getByRole('button', { name: 'Próxima página' }).click();
+  const summary = page.getByText(/^Mostrando/);
+  await expect(summary).toHaveText('Mostrando 26–26 de 26');
+
+  await page.getByRole('combobox', { name: /Categoria de Zzz/ }).selectOption({ label: 'Compras' });
+  await page.getByRole('dialog', { name: 'Categorizar transação' }).getByRole('button', { name: 'Salvar', exact: true }).click();
+
+  await expect(summary).toHaveText('Mostrando 1–25 de 25');
 });

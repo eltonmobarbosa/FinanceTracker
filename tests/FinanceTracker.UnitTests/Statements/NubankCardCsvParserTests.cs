@@ -87,6 +87,8 @@ public class NubankCardCsvParserTests
 
     [Theory]
     [InlineData("2026-10-16,Loja,\"abc\"", "valor inválido")]
+    [InlineData("2026-10-16,Loja,69.90", "valor inválido")] // would silently become 6990
+    [InlineData("2026-10-16,Loja,\"1.23,45\"", "valor inválido")]
     [InlineData("16/10/2026,Loja,\"10,00\"", "data inválida")]
     [InlineData("2026-10-16,Loja", "esperadas 3 colunas")]
     public void Malformed_line_reports_line_number_and_problem(string line, string expectedMessage)

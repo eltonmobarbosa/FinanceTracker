@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 using FinanceTracker.Application.Statements;
@@ -32,10 +33,10 @@ public sealed partial class OfxParser : IStatementParser
         var transactions = new List<ParsedTransaction>();
         var index = 0;
 
-        foreach (Match block in TransactionBlock().Matches(text))
+        foreach (var block in TransactionBlocks(text))
         {
             index++;
-            var tags = ReadTags(block.Groups[1].Value);
+            var tags = ReadTags(block);
 
             var fitId = Required(tags, "FITID", index);
             var date = ParseDate(Required(tags, "DTPOSTED", index), index);
@@ -43,11 +44,28 @@ public sealed partial class OfxParser : IStatementParser
             var description = tags.GetValueOrDefault("MEMO") ?? tags.GetValueOrDefault("NAME")
                 ?? throw new StatementFormatException($"Transação {index}: sem MEMO nem NAME.");
 
-            // FITID should be unique, but some banks repeat it inside one file.
-            transactions.Add(new ParsedTransaction(date, amount, description, ids.Unique(fitId)));
+            // FITID should be unique, but some banks repeat it, inside one file or across files.
+            transactions.Add(new ParsedTransaction(date, amount, description, ids.Unique(ExternalIds.Ofx(fitId, date, amount))));
         }
 
         return transactions;
+    }
+
+    // IndexOf instead of a regex: a file full of unclosed tags stays linear and cannot pin the CPU.
+    private static IEnumerable<string> TransactionBlocks(string text)
+    {
+        const string open = "<STMTTRN>", close = "</STMTTRN>";
+
+        var start = text.IndexOf(open, StringComparison.OrdinalIgnoreCase);
+        while (start >= 0)
+        {
+            var body = start + open.Length;
+            var end = text.IndexOf(close, body, StringComparison.OrdinalIgnoreCase);
+            if (end < 0) yield break;
+
+            yield return text[body..end];
+            start = text.IndexOf(open, end + close.Length, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private static Dictionary<string, string> ReadTags(string block)
@@ -55,7 +73,7 @@ public sealed partial class OfxParser : IStatementParser
         var tags = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (Match tag in LeafTag().Matches(block))
         {
-            var value = tag.Groups[2].Value.Trim();
+            var value = WebUtility.HtmlDecode(tag.Groups[2].Value).Trim(); // "C&amp;A" -> "C&A"
             if (value.Length > 0) tags.TryAdd(tag.Groups[1].Value, value);
         }
         return tags;
@@ -71,29 +89,41 @@ public sealed partial class OfxParser : IStatementParser
             ? date
             : throw new StatementFormatException($"Transação {index}: data inválida '{value}'.");
 
-    // The spec uses '.', but some Brazilian banks write "-50,00".
+    // The spec uses '.', but some Brazilian banks write "-50,00" or "-1.234,56": a comma after the last dot is decimal.
     private static decimal ParseAmount(string value, int index)
     {
-        var normalized = value.Contains('.') ? value : value.Replace(',', '.');
+        var normalized = value.LastIndexOf(',') > value.LastIndexOf('.')
+            ? value.Replace(".", "").Replace(',', '.')
+            : value;
         return decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out var amount)
             ? amount
             : throw new StatementFormatException($"Transação {index}: valor inválido '{value}'.");
     }
 
-    /// <summary>The SGML header declares the charset (CHARSET:1252); otherwise UTF-8.</summary>
+    /// <summary>
+    /// The SGML header may declare CHARSET:1252. Otherwise UTF-8, falling back to Windows-1252 (a superset of
+    /// the Latin-1 letters) when the bytes are not valid UTF-8, because some banks declare the charset wrongly.
+    /// </summary>
     private static string Decode(byte[] content)
     {
         var header = Encoding.ASCII.GetString(content, 0, Math.Min(content.Length, 512));
-        var encoding = header.Contains("CHARSET:1252", StringComparison.OrdinalIgnoreCase)
-            ? Encoding.GetEncoding(1252)
-            : Encoding.UTF8;
+        if (header.Contains("CHARSET:1252", StringComparison.OrdinalIgnoreCase)) return Read(content, Encoding.GetEncoding(1252));
 
+        try
+        {
+            return Read(content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true));
+        }
+        catch (DecoderFallbackException)
+        {
+            return Read(content, Encoding.GetEncoding(1252));
+        }
+    }
+
+    private static string Read(byte[] content, Encoding encoding)
+    {
         using var reader = new StreamReader(new MemoryStream(content), encoding, detectEncodingFromByteOrderMarks: true);
         return reader.ReadToEnd();
     }
-
-    [GeneratedRegex(@"<STMTTRN>(.*?)</STMTTRN>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex TransactionBlock();
 
     // <TAG>value  — value stops at the next tag or line break (works for SGML and XML).
     [GeneratedRegex(@"<(\w+)>([^<\r\n]*)")]

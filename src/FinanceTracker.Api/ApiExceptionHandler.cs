@@ -1,6 +1,7 @@
 using FinanceTracker.Application.Common;
 using FinanceTracker.Application.Statements;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinanceTracker.Api;
@@ -22,7 +23,9 @@ internal sealed class ApiExceptionHandler(IProblemDetailsService problemDetails)
             // is the safety net for rules only the domain knows.
             ArgumentException => (StatusCodes.Status400BadRequest, "Dados inválidos"),
             // Unique index violated by a concurrent request (e.g. same file imported twice at the same time).
-            DbUpdateException => (StatusCodes.Status409Conflict, "Conflito"),
+            // Any other database error is a real failure: it stays a 500.
+            DbUpdateException { InnerException: SqlException { Number: 2601 or 2627 } } =>
+                (StatusCodes.Status409Conflict, "Conflito"),
             _ => null,
         };
 

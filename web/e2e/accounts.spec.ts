@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { CARD_CSV, CHECKING_OFX, expect, test } from './fixtures';
+import { CARD_CSV, CHECKING_OFX, PASSWORD, expect, test } from './fixtures';
 
 test.describe('accounts and import', () => {
   test('create accounts, import, re-import, unsupported file, drag and drop, delete', async ({ loggedIn: page }) => {
@@ -70,5 +70,38 @@ test.describe('accounts and import', () => {
     await confirm.getByRole('button', { name: 'Excluir conta' }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Conta excluída' })).toBeVisible();
     await expect(checking).toHaveCount(0);
+  });
+
+  test('several files at once, undo, and delete profile', async ({ loggedIn: page, user, request }) => {
+    const headers = { Authorization: `Bearer ${user.token}` };
+    await request.post('/api/accounts', { headers, data: { name: 'Cartão', type: 'CreditCard' } });
+    await page.goto('/contas');
+    const card = page.getByRole('article', { name: 'Cartão' });
+    const csv = (name: string, title: string) => ({
+      name, mimeType: 'text/csv', buffer: Buffer.from(`date,title,amount\n2026-10-01,${title},"10,00"`),
+    });
+
+    await card.getByLabel('Arquivo de extrato para Cartão').setInputFiles([csv('a.csv', 'Loja A'), csv('b.csv', 'Loja B')]);
+    await expect(card.getByRole('status').locator('dd')).toHaveText(['2', '2', '0', '0']);
+    await expect(card).toContainText('2 transações');
+
+    await card.getByRole('button', { name: 'Desfazer importação' }).click();
+    await page.getByRole('dialog', { name: 'Desfazer importação?' }).getByRole('button', { name: 'Desfazer' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Importação desfeita' })).toBeVisible();
+    await expect(card).toContainText('nenhum extrato importado');
+
+    // Wrong password keeps the session; the right one deletes everything and logs out.
+    await page.getByRole('button', { name: 'Excluir meu perfil' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Excluir meu perfil?' });
+    await dialog.getByLabel('Confirme sua senha').fill('senha-errada-1');
+    await dialog.getByRole('button', { name: 'Excluir definitivamente' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Senha incorreta' })).toBeVisible();
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByLabel('Confirme sua senha').fill(PASSWORD);
+    await dialog.getByRole('button', { name: 'Excluir definitivamente' }).click();
+    await expect(page).toHaveURL(/\/login/);
+    const login = await request.post('/api/auth/login', { data: { email: user.email, password: PASSWORD } });
+    expect(login.status()).toBe(401);
   });
 });

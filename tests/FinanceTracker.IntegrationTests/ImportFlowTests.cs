@@ -33,8 +33,92 @@ public sealed class ImportFlowTests(ApiFactory api)
         var second = await ImportAsync(client, account.Id, NubankCsv);
 
         // IOF -> "Impostos e taxas", "Pagamento recebido" -> "Transferências" (default rules).
-        Assert.Equal(new ImportResult(Total: 5, Imported: 5, Duplicates: 0, Categorized: 2), first);
+        Assert.NotNull(first.ImportId);
+        Assert.Equal(new ImportResult(Total: 5, Imported: 5, Duplicates: 0, Categorized: 2, first.ImportId), first);
         Assert.Equal(new ImportResult(Total: 5, Imported: 0, Duplicates: 5, Categorized: 0), second);
+    }
+
+    [Fact]
+    public async Task Undo_removes_only_the_rows_of_that_import()
+    {
+        var client = await api.CreateUserClientAsync();
+        var account = await CreateCardAsync(client);
+        await ImportAsync(client, account.Id, "date,title,amount\n2026-10-01,Antiga,\"10,00\"");
+        var second = await ImportAsync(client, account.Id, "date,title,amount\n2026-10-02,Nova,\"20,00\"");
+
+        var undo = await client.DeleteAsync($"/api/accounts/{account.Id}/imports/{second.ImportId}");
+        var again = await client.DeleteAsync($"/api/accounts/{account.Id}/imports/{second.ImportId}");
+
+        var left = (await client.GetFromJsonAsync<PagedResult<TransactionDto>>("/api/transactions", ApiFactory.Json))!;
+        Assert.Equal(HttpStatusCode.NoContent, undo.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, again.StatusCode);
+        Assert.Equal("Antiga", Assert.Single(left.Items).Description);
+    }
+
+    [Fact]
+    public async Task Card_refund_reduces_spending_instead_of_counting_as_income()
+    {
+        var client = await api.CreateUserClientAsync();
+        var account = await CreateCardAsync(client);
+        await ImportAsync(client, account.Id,
+            "date,title,amount\n2026-10-01,Loja X,\"100,00\"\n2026-10-05,Estorno Loja X,\"- 40,00\"");
+
+        var summary = (await client.GetFromJsonAsync<SummaryDto>("/api/reports/summary", ApiFactory.Json))!;
+
+        Assert.Equal(0m, summary.Income);
+        Assert.Equal(60m, summary.Expenses);
+    }
+
+    [Fact]
+    public async Task Payment_received_on_a_checking_account_is_income_not_a_transfer()
+    {
+        var client = await api.CreateUserClientAsync();
+        var response = await client.PostAsJsonAsync("/api/accounts",
+            new CreateAccountRequest("Corrente", AccountType.Checking), ApiFactory.Json);
+        var account = (await response.Content.ReadFromJsonAsync<AccountDto>(ApiFactory.Json))!;
+
+        await ImportAsync(client, account.Id, "date,title,amount\n2026-10-01,Pagamento recebido cliente,\"- 500,00\"");
+
+        var summary = (await client.GetFromJsonAsync<SummaryDto>("/api/reports/summary", ApiFactory.Json))!;
+        Assert.Equal(500m, summary.Income);
+    }
+
+    [Fact]
+    public async Task Search_ignores_accents()
+    {
+        var client = await api.CreateUserClientAsync();
+        var account = await CreateCardAsync(client);
+        await ImportAsync(client, account.Id, "date,title,amount\n2026-10-01,Padaria São João,\"10,00\"");
+
+        var page = (await client.GetFromJsonAsync<PagedResult<TransactionDto>>(
+            "/api/transactions?search=sao%20joao", ApiFactory.Json))!;
+
+        Assert.Equal(1, page.TotalCount);
+    }
+
+    [Fact]
+    public async Task Same_rule_text_cannot_be_created_twice()
+    {
+        var client = await api.CreateUserClientAsync();
+        var categories = (await client.GetFromJsonAsync<List<CategoryDto>>("/api/categories", ApiFactory.Json))!;
+        var food = categories.Single(c => c.Name == "Alimentação");
+
+        var response = await client.PostAsJsonAsync($"/api/categories/{food.Id}/rules",
+            new CreateRuleRequest("UBER"), ApiFactory.Json); // already a "Transporte" rule
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Database_failure_is_not_reported_as_a_conflict()
+    {
+        var client = await api.CreateUserClientAsync();
+        var account = await CreateCardAsync(client);
+
+        var response = await PostFileAsync(client, account.Id, "f.csv",
+            "date,title,amount\n2026-10-01,Enorme,\"9999999999999999999,00\""); // does not fit decimal(18,2)
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
     }
 
     [Fact]

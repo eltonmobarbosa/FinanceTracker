@@ -1,6 +1,8 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { firstValueFrom, forkJoin } from 'rxjs';
+import { AuthService } from '../core/auth.service';
 import { CategoryStore } from '../core/category-store';
 import { FinanceApi } from '../core/finance-api';
 import { BrDatePipe } from '../core/format';
@@ -11,6 +13,15 @@ import { Icon } from '../shared/icon';
 import { Modal } from '../shared/modal';
 
 const ACCEPTED = ['.ofx', '.csv'];
+
+/** Totals of the files sent in one go, and what is needed to undo them. */
+interface UploadSummary {
+  total: number;
+  imported: number;
+  duplicates: number;
+  categorized: number;
+  importIds: string[];
+}
 
 @Component({
   selector: 'app-accounts-page',
@@ -56,7 +67,7 @@ const ACCEPTED = ['.ofx', '.csv'];
                      [class.border-ring]="dragOver() === account.id" [class.bg-muted]="dragOver() === account.id"
                      (dragover)="$event.preventDefault(); dragOver.set(account.id)" (dragleave)="dragOver.set(null)"
                      (drop)="onDrop(account, $event)">
-                <input type="file" class="sr-only" [accept]="accepted" (change)="onPick(account, $event)"
+                <input type="file" multiple class="sr-only" [accept]="accepted" (change)="onPick(account, $event)"
                        [attr.aria-label]="'Arquivo de extrato para ' + account.name" />
                 @if (busy() === account.id) {
                   <app-icon name="loader" class="animate-spin text-muted-foreground" [size]="22" />
@@ -79,13 +90,18 @@ const ACCEPTED = ['.ofx', '.csv'];
                     <div><dt class="text-xs text-muted-foreground">Já existiam</dt><dd class="tabular text-lg font-semibold">{{ r.duplicates }}</dd></div>
                     <div><dt class="text-xs text-muted-foreground">Categorizadas</dt><dd class="tabular text-lg font-semibold">{{ r.categorized }}</dd></div>
                   </dl>
-                  @if (r.imported - r.categorized > 0) {
-                    <a routerLink="/transacoes" [queryParams]="{ uncategorized: true }" class="btn btn-outline btn-sm mt-4">
-                      <app-icon name="sparkles" [size]="14" /> Categorizar {{ r.imported - r.categorized }} restante(s)
-                    </a>
-                  } @else if (r.imported > 0) {
-                    <a routerLink="/" class="btn btn-outline btn-sm mt-4">Ver visão geral <app-icon name="chevron-right" [size]="14" /></a>
-                  }
+                  <div class="mt-4 flex flex-wrap gap-2">
+                    @if (r.imported - r.categorized > 0) {
+                      <a routerLink="/transacoes" [queryParams]="{ uncategorized: true }" class="btn btn-outline btn-sm">
+                        <app-icon name="sparkles" [size]="14" /> Categorizar {{ r.imported - r.categorized }} restante(s)
+                      </a>
+                    } @else if (r.imported > 0) {
+                      <a routerLink="/" class="btn btn-outline btn-sm">Ver visão geral <app-icon name="chevron-right" [size]="14" /></a>
+                    }
+                    @if (r.importIds.length) {
+                      <button class="btn btn-ghost btn-sm" (click)="undoImport(account)">Desfazer importação</button>
+                    }
+                  </div>
                 </div>
               }
             </div>
@@ -104,7 +120,8 @@ const ACCEPTED = ['.ofx', '.csv'];
         }
       </div>
 
-      <aside class="card h-fit p-5 text-sm">
+      <div class="grid h-fit gap-4">
+      <aside class="card p-5 text-sm">
         <h2 class="font-semibold">Como exportar o extrato</h2>
         <ol class="mt-4 space-y-4">
           <li>
@@ -121,7 +138,31 @@ const ACCEPTED = ['.ofx', '.csv'];
           </li>
         </ol>
       </aside>
+
+      <section class="card p-5 text-sm">
+        <h2 class="font-semibold">Meus dados</h2>
+        <p class="mt-1 text-muted-foreground">Apaga seu usuário, contas, transações, categorias e regras.</p>
+        <button class="btn btn-outline btn-sm mt-4 text-destructive" (click)="openDeleteProfile()">Excluir meu perfil</button>
+      </section>
+      </div>
     </div>
+
+    <dialog class="modal" [(appModal)]="deleteProfileOpen" aria-labelledby="delete-profile-title">
+      <form class="p-6" (ngSubmit)="deleteProfile()">
+        <h2 id="delete-profile-title" class="text-lg font-semibold">Excluir meu perfil?</h2>
+        <p class="mt-1 text-sm text-muted-foreground">Todos os seus dados serão apagados. Isso não pode ser desfeito.</p>
+
+        <div class="mt-5 space-y-2">
+          <label class="label" for="delete-password">Confirme sua senha</label>
+          <input id="delete-password" name="password" type="password" class="input" autocomplete="current-password" [(ngModel)]="deletePassword" />
+        </div>
+
+        <div class="mt-6 flex justify-end gap-2">
+          <button type="button" class="btn btn-outline" (click)="deleteProfileOpen.set(false)">Cancelar</button>
+          <button type="submit" class="btn btn-destructive" [disabled]="!deletePassword">Excluir definitivamente</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog class="modal" [(appModal)]="newAccountOpen" aria-labelledby="new-account-title">
       <form class="p-6" (ngSubmit)="createAccount()">
@@ -159,6 +200,7 @@ export class AccountsPage {
   private readonly toast = inject(ToastService);
   private readonly confirm = inject(ConfirmService);
   private readonly store = inject(CategoryStore);
+  private readonly auth = inject(AuthService);
 
   protected readonly accepted = ACCEPTED.join(',');
   protected readonly types = [
@@ -169,11 +211,28 @@ export class AccountsPage {
   protected readonly accounts = this.api.accounts();
   protected readonly busy = signal<number | null>(null);
   protected readonly dragOver = signal<number | null>(null);
-  protected readonly results = signal<Record<number, ImportResult>>({});
+  protected readonly results = signal<Record<number, UploadSummary>>({});
 
   protected readonly newAccountOpen = signal(false);
   protected newName = '';
   protected newType: AccountType = 'CreditCard';
+
+  protected readonly deleteProfileOpen = signal(false);
+  protected deletePassword = '';
+
+  protected openDeleteProfile(): void {
+    this.deletePassword = '';
+    this.deleteProfileOpen.set(true);
+  }
+
+  protected deleteProfile(): void {
+    if (!this.deletePassword) return;
+    this.api.deleteProfile(this.deletePassword).subscribe(() => {
+      this.deleteProfileOpen.set(false);
+      this.toast.success('Perfil excluído', 'Seus dados foram apagados.');
+      this.auth.logout();
+    });
+  }
 
   protected openNewAccount(): void {
     this.newName = '';
@@ -207,32 +266,63 @@ export class AccountsPage {
 
   protected onPick(account: Account, event: Event): void {
     const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
+    const files = Array.from(input.files ?? []);
     input.value = ''; // allows sending the same file again (to see duplicate detection)
-    if (file) this.upload(account, file);
+    void this.upload(account, files);
   }
 
   protected onDrop(account: Account, event: DragEvent): void {
     event.preventDefault();
     this.dragOver.set(null);
-    const file = event.dataTransfer?.files[0];
-    if (file) this.upload(account, file);
+    void this.upload(account, Array.from(event.dataTransfer?.files ?? []));
   }
 
-  private upload(account: Account, file: File): void {
-    if (!ACCEPTED.some((ext) => file.name.toLowerCase().endsWith(ext))) {
-      this.toast.error('Formato não suportado', 'Envie um arquivo .ofx ou .csv.');
-      return;
-    }
-    this.busy.set(account.id);
-    this.api.importStatement(account.id, file).subscribe({
-      next: (result) => {
-        this.busy.set(null);
-        this.results.update((all) => ({ ...all, [account.id]: result }));
-        this.accounts.reload(); // refresh count and "até" date
-        this.store.reload();
-      },
-      error: () => this.busy.set(null),
+  protected async undoImport(account: Account): Promise<void> {
+    const summary = this.results()[account.id];
+    if (!summary?.importIds.length) return;
+    const ok = await this.confirm.ask({
+      title: 'Desfazer importação?',
+      message: `${summary.imported} transação(ões) adicionada(s) neste envio serão apagadas, com as categorias ajustadas nelas.`,
+      confirmText: 'Desfazer',
+      destructive: true,
     });
+    if (!ok) return;
+    forkJoin(summary.importIds.map((id) => this.api.undoImport(account.id, id))).subscribe(() => {
+      this.results.update(({ [account.id]: _undone, ...others }) => others);
+      this.toast.success('Importação desfeita');
+      this.accounts.reload();
+      this.store.reload();
+    });
+  }
+
+  /** One file at a time: each import is its own database transaction, and a bad file does not stop the others. */
+  private async upload(account: Account, files: File[]): Promise<void> {
+    const supported = files.filter((file) => ACCEPTED.some((ext) => file.name.toLowerCase().endsWith(ext)));
+    if (supported.length < files.length) this.toast.error('Formato não suportado', 'Envie um arquivo .ofx ou .csv.');
+    if (!supported.length) return;
+
+    this.busy.set(account.id);
+    const summary: UploadSummary = { total: 0, imported: 0, duplicates: 0, categorized: 0, importIds: [] };
+    let succeeded = 0;
+    for (const file of supported) {
+      try {
+        const result: ImportResult = await firstValueFrom(this.api.importStatement(account.id, file));
+        summary.total += result.total;
+        summary.imported += result.imported;
+        summary.duplicates += result.duplicates;
+        summary.categorized += result.categorized;
+        if (result.importId) summary.importIds.push(result.importId);
+        succeeded++;
+      } catch {
+        // The HTTP interceptor already showed the error for this file.
+      }
+    }
+    this.busy.set(null);
+
+    if (succeeded) {
+      this.results.update((all) => ({ ...all, [account.id]: summary }));
+      this.accounts.reload(); // refresh count and "até" date
+      this.store.reload();
+    }
   }
 }

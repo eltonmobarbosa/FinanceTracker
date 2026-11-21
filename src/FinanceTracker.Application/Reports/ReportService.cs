@@ -1,4 +1,5 @@
 using FinanceTracker.Application.Common;
+using FinanceTracker.Domain.Accounts;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinanceTracker.Application.Reports;
@@ -26,31 +27,39 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser user)
         if (to is { } tt) transactions = transactions.Where(t => t.Date <= tt);
         if (accountId is { } a) transactions = transactions.Where(t => t.AccountId == a);
 
+        // On a card, money coming back is a refund: it reduces spending instead of counting as income.
+        var flows =
+            from t in transactions
+            join acc in db.Accounts on t.AccountId equals acc.Id
+            select new { t.CategoryId, t.Date, t.Amount, acc.Type };
+
         // Aggregations run in SQL Server (GROUP BY / SUM); only the totals travel to the app.
-        var byCategory = await transactions
-            .Where(t => t.Amount < 0)
+        var byCategory = await flows
+            .Where(t => t.Amount < 0 || t.Type == AccountType.CreditCard)
             .GroupBy(t => t.CategoryId)
             .Select(g => new { CategoryId = g.Key, Total = -g.Sum(t => t.Amount) })
             .ToListAsync(ct);
 
         // Anonymous type in the SQL part; the record is built in memory (EF cannot order by a record's properties).
-        var byMonth = (await transactions
+        var byMonth = (await flows
                 .GroupBy(t => new { t.Date.Year, t.Date.Month })
                 .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.Month)
                 .Select(g => new
                 {
                     g.Key.Year,
                     g.Key.Month,
-                    Income = g.Sum(t => t.Amount > 0 ? t.Amount : 0),
-                    Expenses = -g.Sum(t => t.Amount < 0 ? t.Amount : 0),
+                    Income = g.Sum(t => t.Amount > 0 && t.Type != AccountType.CreditCard ? t.Amount : 0),
+                    Expenses = -g.Sum(t => t.Amount < 0 || t.Type == AccountType.CreditCard ? t.Amount : 0),
                 })
                 .ToListAsync(ct))
-            .Select(m => new MonthTotal(m.Year, m.Month, m.Income, m.Expenses))
+            // A refund of a purchase from an earlier month must not show as negative spending.
+            .Select(m => new MonthTotal(m.Year, m.Month, m.Income, Math.Max(0, m.Expenses)))
             .ToList();
 
         var names = await db.OwnedCategories(userId).ToDictionaryAsync(c => c.Id, c => c.Name, ct);
 
         var expensesByCategory = byCategory
+            .Where(c => c.Total > 0)
             .Select(c => new CategoryTotal(
                 c.CategoryId, c.CategoryId is { } id ? names[id] : "Sem categoria", c.Total))
             .OrderByDescending(c => c.Total)

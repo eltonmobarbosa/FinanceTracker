@@ -46,6 +46,7 @@ export interface ImportResult {
   imported: number;
   duplicates: number;
   categorized: number;
+  importId: string | null;
 }
 
 export interface Summary {

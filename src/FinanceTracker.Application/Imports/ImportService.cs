@@ -1,5 +1,6 @@
 using FinanceTracker.Application.Common;
 using FinanceTracker.Application.Statements;
+using FinanceTracker.Domain.Accounts;
 using FinanceTracker.Domain.Categories;
 using FinanceTracker.Domain.Transactions;
 using Microsoft.EntityFrameworkCore;
@@ -10,7 +11,8 @@ namespace FinanceTracker.Application.Imports;
 /// <param name="Imported">New transactions saved.</param>
 /// <param name="Duplicates">Lines already imported before (skipped).</param>
 /// <param name="Categorized">New transactions that a rule categorized.</param>
-public sealed record ImportResult(int Total, int Imported, int Duplicates, int Categorized);
+/// <param name="ImportId">Identifies this upload so it can be undone. Null when nothing new was saved.</param>
+public sealed record ImportResult(int Total, int Imported, int Duplicates, int Categorized, Guid? ImportId = null);
 
 public sealed class ImportService(IAppDbContext db, ICurrentUser user, IEnumerable<IStatementParser> parsers)
 {
@@ -32,12 +34,14 @@ public sealed class ImportService(IAppDbContext db, ICurrentUser user, IEnumerab
                 .ToListAsync(ct))
             .ToHashSet(StringComparer.Ordinal);
 
-        var categorizer = new Categorizer(await db.OwnedRules(user.UserId).AsNoTracking().ToListAsync(ct));
+        var rules = await db.OwnedRules(user.UserId).AsNoTracking().ToListAsync(ct);
+        var categorizer = new Categorizer(account.Type == AccountType.CreditCard ? rules : rules.Where(r => !r.IsCardOnly));
+        var importId = Guid.NewGuid();
         int imported = 0, categorized = 0;
 
         foreach (var line in parsed.Where(p => !alreadyImported.Contains(p.ExternalId)))
         {
-            var transaction = new Transaction(account.Id, line.Date, line.Amount, line.Description, line.ExternalId);
+            var transaction = new Transaction(account.Id, line.Date, line.Amount, line.Description, line.ExternalId, importId);
 
             var categoryId = categorizer.Categorize(line.Description);
             if (categoryId is not null)
@@ -55,6 +59,18 @@ public sealed class ImportService(IAppDbContext db, ICurrentUser user, IEnumerab
         // rejects this save and the Api answers 409 instead of creating duplicates.
         await db.SaveChangesAsync(ct);
 
-        return new ImportResult(parsed.Count, imported, parsed.Count - imported, categorized);
+        return new ImportResult(parsed.Count, imported, parsed.Count - imported, categorized, imported > 0 ? importId : null);
+    }
+
+    /// <summary>Removes exactly the rows one upload created (a statement sent to the wrong account, for example).</summary>
+    public async Task UndoAsync(int accountId, Guid importId, CancellationToken ct)
+    {
+        var account = await db.OwnedAccounts(user.UserId).GetAsync(accountId, "Conta", ct);
+
+        var rows = await db.Transactions.Where(t => t.AccountId == account.Id && t.ImportId == importId).ToListAsync(ct);
+        if (rows.Count == 0) throw new NotFoundException("Importação");
+
+        db.Transactions.RemoveRange(rows);
+        await db.SaveChangesAsync(ct);
     }
 }

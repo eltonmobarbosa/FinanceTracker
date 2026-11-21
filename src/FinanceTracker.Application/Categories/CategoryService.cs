@@ -67,6 +67,7 @@ public sealed class CategoryService(IAppDbContext db, ICurrentUser user)
     public async Task<CategoryRuleDto> AddRuleAsync(int categoryId, CreateRuleRequest request, CancellationToken ct)
     {
         var category = await db.OwnedCategories(user.UserId).GetAsync(categoryId, "Categoria", ct);
+        await db.EnsureRuleIsNewAsync(user.UserId, request.Pattern, ct);
 
         var rule = category.AddRule(request.Pattern, request.Priority);
         await db.SaveChangesAsync(ct);

@@ -4,27 +4,17 @@ import { Component, computed, effect, inject, input, linkedSignal, signal } from
 import { FormsModule } from '@angular/forms';
 import { CategoryStore } from '../core/category-store';
 import { FinanceApi } from '../core/finance-api';
-import { BrDatePipe, PERIOD_LABELS, PeriodPreset, periodRange, suggestPattern } from '../core/format';
+import { BrDatePipe, PERIOD_LABELS, PeriodPreset, periodRange } from '../core/format';
 import { Paged, Transaction } from '../core/models';
 import { ToastService } from '../core/toast.service';
 import { Icon } from '../shared/icon';
-import { Modal } from '../shared/modal';
+import { CategorizeDialog, CategorizeTarget } from './categorize-dialog';
 
 const PAGE_SIZE = 25;
 
-/** The category change being confirmed in the dialog. */
-interface Draft {
-  transaction: Transaction;
-  /** The row's select, to put back the saved option if the user cancels. */
-  select: HTMLSelectElement;
-  categoryId: number;
-  createRule: boolean;
-  pattern: string;
-}
-
 @Component({
   selector: 'app-transactions-page',
-  imports: [CurrencyPipe, FormsModule, BrDatePipe, Icon, Modal],
+  imports: [CurrencyPipe, FormsModule, BrDatePipe, Icon, CategorizeDialog],
   template: `
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
@@ -138,49 +128,7 @@ interface Draft {
       }
     </div>
 
-    <dialog class="modal max-w-lg" [(appModal)]="dialogOpen" (appModalChange)="!$event && cancel()" aria-labelledby="categorize-title">
-      @if (draft(); as d) {
-        <form class="p-6" (ngSubmit)="save()">
-          <h2 id="categorize-title" class="text-lg font-semibold">Categorizar transação</h2>
-          <p class="mt-1 truncate text-sm text-muted-foreground">{{ d.transaction.description }} · {{ d.transaction.amount | currency }}</p>
-
-          <div class="mt-5 space-y-2">
-            <label class="label" for="dlg-category">Categoria</label>
-            <select id="dlg-category" name="category" class="input" [ngModel]="d.categoryId" (ngModelChange)="patch({ categoryId: $event })">
-              @for (c of store.categories.value(); track c.id) { <option [ngValue]="c.id">{{ c.name }}</option> }
-            </select>
-          </div>
-
-          <div class="mt-5 rounded-lg border p-4" [class]="d.createRule ? 'bg-muted/40' : ''">
-            <label class="flex cursor-pointer items-start gap-3">
-              <input type="checkbox" name="createRule" class="mt-0.5 size-4 accent-current" [ngModel]="d.createRule" (ngModelChange)="patch({ createRule: $event })" />
-              <span>
-                <span class="flex items-center gap-1.5 text-sm font-medium"><app-icon name="sparkles" [size]="14" /> Criar regra automática</span>
-                <span class="text-sm text-muted-foreground">Aplica agora às transações sem categoria e às próximas importações.</span>
-              </span>
-            </label>
-            @if (d.createRule) {
-              <div class="mt-4 space-y-2 pl-7">
-                <label class="label" for="dlg-pattern">Quando a descrição contiver</label>
-                <input id="dlg-pattern" name="pattern" class="input" maxlength="100" [ngModel]="d.pattern" (ngModelChange)="patch({ pattern: $event })" />
-                <p class="text-xs text-muted-foreground">
-                  @if (d.pattern.trim().length < 2) { Digite pelo menos 2 caracteres. }
-                  @else { Cerca de <strong class="text-foreground">{{ preview() }}</strong> outra(s) transação(ões) sem categoria contêm esse texto. }
-                </p>
-              </div>
-            }
-          </div>
-
-          <div class="mt-6 flex justify-end gap-2">
-            <button type="button" class="btn btn-outline" (click)="cancel()">Cancelar</button>
-            <button type="submit" class="btn btn-primary" [disabled]="saving() || (d.createRule && d.pattern.trim().length < 2)">
-              @if (saving()) { <app-icon name="loader" class="animate-spin" /> }
-              {{ d.createRule ? 'Salvar e criar regra' : 'Salvar' }}
-            </button>
-          </div>
-        </form>
-      }
-    </dialog>
+    <app-categorize-dialog [target]="target()" (saved)="onSaved()" (cancelled)="onCancelled()" />
   `,
 })
 export class TransactionsPage {
@@ -226,22 +174,9 @@ export class TransactionsPage {
   protected readonly rangeStart = computed(() => (this.page() - 1) * PAGE_SIZE + 1);
   protected readonly rangeEnd = computed(() => Math.min(this.page() * PAGE_SIZE, this.total()));
 
-  // ---- Categorize dialog ----
-  protected readonly dialogOpen = signal(false);
-  protected readonly draft = signal<Draft | null>(null);
-  protected readonly saving = signal(false);
-
-  // Live preview of how many uncategorized transactions the rule would also hit (server LIKE search: approximate).
-  private readonly previewPage = httpResource<Paged<Transaction>>(() => {
-    const d = this.draft();
-    const pattern = d?.createRule ? d.pattern.trim() : '';
-    return pattern.length >= 2 ? { url: '/api/transactions', params: { uncategorized: true, search: pattern, pageSize: 1 } } : undefined;
-  });
-  protected readonly preview = computed(() => {
-    const d = this.draft();
-    const count = this.previewPage.value()?.totalCount ?? 0;
-    return d?.transaction.categoryId === null ? Math.max(0, count - 1) : count;
-  });
+  protected readonly target = signal<CategorizeTarget | null>(null);
+  /** The row's select, to put back the saved option if the change is cancelled. */
+  private activeSelect: HTMLSelectElement | null = null;
 
   constructor() {
     // Debounce: search 300 ms after the user stops typing, not on every key.
@@ -252,6 +187,13 @@ export class TransactionsPage {
         this.page.set(1);
       }, 300);
       onCleanup(() => clearTimeout(timer));
+    });
+
+    // Categorizing the last row of the last page shrinks the list: go back to a page that still exists.
+    effect(() => {
+      if (!this.result.hasValue()) return;
+      const lastPage = Math.max(1, Math.ceil(this.result.value().totalCount / PAGE_SIZE));
+      if (this.page() > lastPage) this.page.set(lastPage);
     });
   }
 
@@ -271,56 +213,35 @@ export class TransactionsPage {
 
   protected startCategorize(transaction: Transaction, categoryId: number | null, select: HTMLSelectElement): void {
     if (categoryId === null) {
-      this.api.categorize(transaction.id, null).subscribe(() => {
-        this.toast.success('Categoria removida');
-        this.result.reload();
+      this.api.categorize(transaction.id, null).subscribe({
+        next: () => {
+          this.toast.success('Categoria removida');
+          this.result.reload();
+        },
+        error: () => this.restore(select, transaction.categoryId),
       });
       return;
     }
-    this.draft.set({ transaction, select, categoryId, createRule: true, pattern: suggestPattern(transaction.description) });
-    this.dialogOpen.set(true);
+    this.activeSelect = select;
+    this.target.set({ transaction, categoryId });
   }
 
-  protected patch(changes: Partial<Draft>): void {
-    this.draft.update((d) => (d ? { ...d, ...changes } : d));
+  protected onSaved(): void {
+    this.target.set(null);
+    this.result.reload();
+  }
+
+  protected onCancelled(): void {
+    const target = this.target();
+    if (target && this.activeSelect) this.restore(this.activeSelect, target.transaction.categoryId);
+    this.target.set(null);
   }
 
   /**
-   * Closing without saving (Cancel button, Esc or backdrop): the row's select goes back to the saved category.
-   * Done on the element because the model never changed, so Angular has nothing to re-render.
-   * Options are [Sem categoria, ...categories], hence the +1.
+   * Puts the row's select back on the saved category. Done on the element because the model never changed,
+   * so Angular has nothing to re-render. Options are [Sem categoria, ...categories], hence the +1.
    */
-  protected cancel(): void {
-    this.dialogOpen.set(false);
-    const d = this.draft();
-    if (!d) return;
-    const saved = d.transaction.categoryId;
-    d.select.selectedIndex = saved === null ? 0 : this.store.categories.value().findIndex((c) => c.id === saved) + 1;
-    this.draft.set(null);
-  }
-
-  protected save(): void {
-    const d = this.draft();
-    if (!d) return;
-    const pattern = d.createRule ? d.pattern.trim() : undefined;
-    const categoryName = this.store.categories.value().find((c) => c.id === d.categoryId)?.name;
-
-    this.saving.set(true);
-    this.api.categorize(d.transaction.id, d.categoryId, pattern).subscribe({
-      next: (r) => {
-        this.saving.set(false);
-        this.draft.set(null);
-        this.dialogOpen.set(false);
-        this.result.reload();
-        if (pattern) {
-          this.store.reload();
-          this.toast.success(`Regra criada em ${categoryName}`,
-            r.alsoCategorized ? `Mais ${r.alsoCategorized} transação(ões) foram categorizadas.` : 'Ela vale para as próximas importações.');
-        } else {
-          this.toast.success(`Movida para ${categoryName}`);
-        }
-      },
-      error: () => this.saving.set(false),
-    });
+  private restore(select: HTMLSelectElement, saved: number | null): void {
+    select.selectedIndex = saved === null ? 0 : this.store.categories.value().findIndex((c) => c.id === saved) + 1;
   }
 }

@@ -7,7 +7,7 @@ internal static class DefaultCategories
     public static readonly (string Name, bool IsTransfer, (string Pattern, int Priority)[] Rules)[] All =
     [
         ("Alimentação", false, [("ifood", 0), ("restaurante", 0), ("padaria", 0), ("supermercado", 0),
-            ("mercado", 0), ("lanchonete", 0), ("pizzaria", 0), ("rappi", 0), ("acougue", 0)]),
+            ("hipermercado", 0), ("minimercado", 0), ("mercadinho", 0), ("lanchonete", 0), ("pizzaria", 0), ("rappi", 0), ("acougue", 0)]),
         ("Transporte", false, [("uber", 0), ("99app", 0), ("99 pop", 0), ("posto", 0), ("combustivel", 0),
             ("estacionamento", 0), ("pedagio", 0)]),
         ("Assinaturas", false, [("netflix", 0), ("spotify", 0), ("disney", 0), ("amazon prime", 0),
@@ -21,7 +21,7 @@ internal static class DefaultCategories
         ("Moradia", false, [("aluguel", 0), ("condominio", 0), ("enel", 0), ("energia", 0), ("sabesp", 0),
             ("agua", 0), ("internet", 0), ("vivo", 0), ("claro", 0)]),
         ("Impostos e taxas", false, [("iof", 10), ("juros", 10), ("tarifa", 10), ("anuidade", 10), ("multa", 10)]),
-        ("Salário", false, [("salario", 0), ("pagamento de salario", 0), ("folha", 0)]),
+        ("Salário", false, [("salario", 0), ("pagamento de salario", 0), ("folha de pagamento", 0)]),
         ("Transferências", true, [("pagamento recebido", 20), ("pagamento de fatura", 20),
             ("pagamento fatura", 20)]),
     ];

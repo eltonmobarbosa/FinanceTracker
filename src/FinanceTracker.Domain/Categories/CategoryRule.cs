@@ -24,8 +24,29 @@ public sealed class CategoryRule : Entity
         Priority = priority;
     }
 
+    /// <summary>"Pagamento recebido" is a bill payment only on a card; on a checking account it is real income.</summary>
+    public bool IsCardOnly => HasSamePattern("pagamento recebido");
+
     // Bank descriptions vary in case and accents ("PADARIA SÃO JOÃO" vs "Padaria Sao Joao"), so both are ignored.
-    public bool Matches(string description) =>
-        CultureInfo.InvariantCulture.CompareInfo.IndexOf(
-            description, Pattern, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
+    // The pattern must start a word: "posto" matches "POSTO SHELL" but not "IMPOSTO", and "mercado" still
+    // matches "MERCADOS". Digits count as a boundary because banks glue them to names ("1234UBER").
+    public bool Matches(string description)
+    {
+        var text = description.AsSpan();
+        for (var from = 0; from < text.Length;)
+        {
+            var index = CultureInfo.InvariantCulture.CompareInfo.IndexOf(text[from..], Pattern, IgnoreCaseAndAccents, out _);
+            if (index < 0) return false;
+
+            var start = from + index;
+            if (start == 0 || !char.IsLetter(text[start - 1])) return true;
+            from = start + 1;
+        }
+        return false;
+    }
+
+    public bool HasSamePattern(string pattern) =>
+        CultureInfo.InvariantCulture.CompareInfo.Compare(Pattern, pattern.Trim(), IgnoreCaseAndAccents) == 0;
+
+    private const CompareOptions IgnoreCaseAndAccents = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
 }

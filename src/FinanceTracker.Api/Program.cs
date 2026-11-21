@@ -55,6 +55,8 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 
+builder.Services.AddRateLimiter(AuthRateLimit.Configure);
+
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddHttpContextAccessor();
@@ -83,6 +85,9 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi().AllowAnonymous();
 }
+
+// Production only: the automated tests register many users from one address.
+if (app.Environment.IsProduction()) app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();

@@ -37,6 +37,9 @@ test.describe('dashboard', () => {
     // Transfers (card bill payment) are excluded: 6 months of sample data spend R$ 26.265,21.
     await expect(kpi('Gastos')).toHaveText('R$ 26.265,21');
 
+    // 9 categories: the 6 biggest plus one line with the rest, so the legend adds up to the total.
+    await expect(page.getByRole('link', { name: /Outras \(3\)/ })).toBeVisible();
+
     // Category legend link opens the transactions filtered by that category.
     await page.getByRole('link', { name: /Moradia/ }).click();
     await expect(page).toHaveURL(/categoryId=\d+/);

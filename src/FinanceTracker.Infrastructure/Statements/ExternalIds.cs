@@ -23,6 +23,13 @@ internal sealed class ExternalIds
         return occurrence == 0 ? key : $"{key}#{occurrence}";
     }
 
+    /// <summary>
+    /// OFX: some banks reuse a FITID for different transactions, so the id alone would hide the new one as
+    /// "already imported". Date and amount tell them apart.
+    /// </summary>
+    public static string Ofx(string fitId, DateOnly date, decimal amount) =>
+        string.Create(CultureInfo.InvariantCulture, $"{fitId}~{date:yyyyMMdd}~{amount:F2}");
+
     /// <summary>For formats without a bank id (CSV): SHA-256 of the line's content, 64 hex chars.</summary>
     public static string Hash(DateOnly date, decimal amount, string description)
     {

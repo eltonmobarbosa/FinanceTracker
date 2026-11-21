@@ -1,9 +1,12 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using FinanceTracker.Api.Auth;
 using FinanceTracker.Application.Accounts;
 using FinanceTracker.Application.Categories;
 using FinanceTracker.Application.Transactions;
 using FinanceTracker.Domain.Accounts;
+using Microsoft.AspNetCore.Hosting;
 
 namespace FinanceTracker.IntegrationTests;
 
@@ -58,6 +61,54 @@ public sealed class SecurityTests(ApiFactory api)
 
         Assert.Contains(categories, c => c is { Name: "Transferências", IsTransfer: true });
         Assert.All(categories, c => Assert.NotEmpty(c.Rules));
+    }
+
+    [Fact]
+    public async Task Delete_profile_needs_the_password_and_removes_all_data()
+    {
+        var client = api.CreateClient();
+        var email = $"{Guid.NewGuid():N}@test.local";
+        var auth = (await (await client.PostAsJsonAsync("/api/auth/register", new { email, password = "Senha-forte-123" }))
+            .Content.ReadFromJsonAsync<AuthResponse>(ApiFactory.Json))!;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth.AccessToken);
+        var account = (await (await client.PostAsJsonAsync("/api/accounts",
+                new CreateAccountRequest("Conta", AccountType.CreditCard), ApiFactory.Json))
+            .Content.ReadFromJsonAsync<AccountDto>(ApiFactory.Json))!;
+        // "Uber" gets a category, so the row references a category that is deleted too.
+        await ImportFlowTests.PostFileAsync(client, account.Id, "f.csv", "date,title,amount\n2026-10-01,Uber,\"10,00\"");
+
+        var wrong = await DeleteProfileAsync(client, "errada-123");
+        var right = await DeleteProfileAsync(client, "Senha-forte-123");
+        var login = await api.CreateClient().PostAsJsonAsync("/api/auth/login", new { email, password = "Senha-forte-123" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, wrong.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, right.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, login.StatusCode);
+    }
+
+    private static Task<HttpResponseMessage> DeleteProfileAsync(HttpClient client, string password) =>
+        client.SendAsync(new HttpRequestMessage(HttpMethod.Delete, "/api/auth/me") { Content = JsonContent.Create(new { password }) });
+
+    [Fact]
+    public async Task Delete_profile_requires_a_token()
+    {
+        var response = await DeleteProfileAsync(api.CreateClient(), "qualquer");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Production_limits_login_attempts()
+    {
+        var client = api.WithWebHostBuilder(b => b.UseEnvironment("Production")).CreateClient();
+
+        var statuses = new List<HttpStatusCode>();
+        for (var i = 0; i < 11; i++)
+            statuses.Add((await client.PostAsJsonAsync("/api/auth/login",
+                new { email = "ninguem@test.local", password = "errada-123" })).StatusCode);
+
+        Assert.All(statuses.Take(10), s => Assert.Equal(HttpStatusCode.Unauthorized, s));
+        Assert.Equal(HttpStatusCode.TooManyRequests, statuses[10]);
     }
 
     [Fact]
